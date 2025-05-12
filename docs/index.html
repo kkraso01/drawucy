@@ -168,521 +168,559 @@
     <div id="status">Ready...</div>
   </div>
 
-  <!-- 1) Load the SignoTec bridge -->
-  <script src="./stpadserverscript.js"></script>
-
+  <!-- Update the script path to be more resilient -->
   <script>
-  (function(){
-    const { STPadServerLibCommons, STPadServerLibApi, STPadServerLibDefault } = window.STPadServerLib;
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
-    const canvasContainer = document.querySelector('.canvas-container');
+    // Define possible script locations to try
+    const scriptLocations = [
+      './stpadserverscript.js',
+      '/stpadserverscript.js',
+      '/drawucy/stpadserverscript.js',
+      '/public/stpadserverscript.js'
+    ];
     
-    let drawing = false;
-    let connectionActive = false;
-    let isPenDown = false;
-    let currentColor = '#000000';
-    let currentWidth = 2;
-    let scaleX = 1;
-    let scaleY = 1;
-    let padWidth = 0;
-    let padHeight = 0;
-    let drawMode = 'draw'; // 'draw' or 'image'
-    let imageSize = 50;
-    let imageSpacing = 20;
-    let lastImageX = -1000;
-    let lastImageY = -1000;
-    let rainbowMode = false;
-    let rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
-    let colorIndex = 0;
-    let imageObj = new Image();
-    let imageLoaded = false;
-    let offsetX = 0;
-    let offsetY = 0;
-    let calibrationMode = false;
-
-    // Load the image
-    imageObj.onload = function() {
-      imageLoaded = true;
-      console.log('Image loaded successfully');
-    };
-    imageObj.onerror = function() {
-      console.error('Failed to load image');
-      // Create a fallback colorful circle if image fails to load
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 100;
-      tempCanvas.height = 100;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.fillStyle = '#FF0000';
-      tempCtx.beginPath();
-      tempCtx.arc(50, 50, 40, 0, Math.PI * 2);
-      tempCtx.fill();
-      imageObj.src = tempCanvas.toDataURL();
-    };
-    imageObj.src = 'pic.png'; // Set the path to your image
-
-    // Function to resize the canvas to fill its container
-    function resizeCanvas() {
-      const containerWidth = canvasContainer.clientWidth;
-      const containerHeight = canvasContainer.clientHeight;
-      
-      // Set canvas display size (css pixels)
-      canvas.style.width = containerWidth + 'px';
-      canvas.style.height = containerHeight + 'px';
-      
-      // Set canvas actual size in memory (scaled to account for extra pixel density)
-      const pixelRatio = window.devicePixelRatio || 1;
-      canvas.width = containerWidth * pixelRatio;
-      canvas.height = containerHeight * pixelRatio;
-      
-      // Normalize coordinate system to use css pixels
-      ctx.scale(pixelRatio, pixelRatio);
-      
-      // Update drawing settings after resize
-      ctx.lineWidth = currentWidth;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = currentColor;
-      
-      // Calculate scaling factors if pad dimensions are known
-      if (padWidth > 0 && padHeight > 0) {
-        scaleX = containerWidth / padWidth;
-        scaleY = containerHeight / padHeight;
-        updateStatus(`Canvas scaled: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
-      }
-
-      // Preserve calibration offsets
-      const oldWidth = canvas.width / pixelRatio;
-      const oldHeight = canvas.height / pixelRatio;
-      const offsetRatioX = offsetX / oldWidth;
-      const offsetRatioY = offsetY / oldHeight;
-      const newWidth = canvas.width / pixelRatio;
-      const newHeight = canvas.height / pixelRatio;
-      offsetX = offsetRatioX * newWidth;
-      offsetY = offsetRatioY * newHeight;
-    }
-
-    // Function to scale and adjust coordinates with offset
-    function transformCoordinates(x, y) {
-      return {
-        x: x * scaleX + offsetX,
-        y: y * scaleY + offsetY
-      };
-    }
-
-    // Initialize drawing mode controls
-    const modeBtns = document.querySelectorAll('.mode-btn');
-    const imageSizeControl = document.querySelector('.image-size-control');
-    const imageSizeSlider = document.querySelector('.image-size-slider');
-    const imageSizeValue = document.querySelector('.image-size-value');
-    const imageSpacingControl = document.querySelector('.image-spacing-control');
-    const imageSpacingSlider = document.querySelector('.image-spacing-slider');
-    const imageSpacingValue = document.querySelector('.image-spacing-value');
-    const rainbowModeControl = document.querySelector('.rainbow-mode-control');
-    const rainbowModeCheckbox = document.getElementById('rainbow-mode-checkbox');
-
-    imageSizeSlider.setAttribute('max', '200');
-
-    modeBtns.forEach(btn => {
-      btn.addEventListener('click', function() {
-        modeBtns.forEach(b => b.classList.remove('selected'));
-        this.classList.add('selected');
-        drawMode = this.getAttribute('data-mode');
-        
-        // Show/hide image controls based on the selected mode
-        if (drawMode === 'image') {
-          imageSizeControl.classList.add('visible');
-          imageSpacingControl.classList.add('visible');
-          rainbowModeControl.classList.add('visible');
-        } else {
-          imageSizeControl.classList.remove('visible');
-          imageSpacingControl.classList.remove('visible');
-          rainbowModeControl.classList.remove('visible');
-        }
-      });
-    });
-
-    imageSizeSlider.addEventListener('input', function() {
-      imageSize = parseInt(this.value);
-      imageSizeValue.textContent = `${imageSize}px`;
-    });
-
-    imageSpacingSlider.addEventListener('input', function() {
-      imageSpacing = parseInt(this.value);
-      imageSpacingValue.textContent = `${imageSpacing}px`;
-    });
-
-    rainbowModeCheckbox.addEventListener('change', function() {
-      rainbowMode = this.checked;
-    });
-
-    // Initialize drawing controls
-    // Add event listeners for color buttons
-    const colorBtns = document.querySelectorAll('.color-btn');
-    const thicknessBtns = document.querySelectorAll('.thickness-btn');
-
-    colorBtns.forEach(btn => {
-      btn.addEventListener('click', function() {
-        // Remove selected class from all color buttons
-        colorBtns.forEach(b => b.classList.remove('selected'));
-        // Add selected class to clicked button
-        this.classList.add('selected');
-        // Update current color
-        currentColor = this.getAttribute('data-color');
-        // Update stroke style
-        ctx.strokeStyle = currentColor;
-      });
-    });
-
-    // Add event listeners for thickness buttons
-    thicknessBtns.forEach(btn => {
-      btn.addEventListener('click', function() {
-        // Remove selected class from all thickness buttons
-        thicknessBtns.forEach(b => b.classList.remove('selected'));
-        // Add selected class to clicked button
-        this.classList.add('selected');
-        // Update current width
-        currentWidth = parseInt(this.getAttribute('data-width'));
-        // Update line width
-        ctx.lineWidth = currentWidth;
-      });
-    });
-
-    // Draw helpers
-    function clearCanvas() { 
-      const pixelRatio = window.devicePixelRatio || 1;
-      ctx.clearRect(0, 0, canvas.width / pixelRatio, canvas.height / pixelRatio); 
-    }
-    
-    function drawStart(x, y) { 
-      const transformed = transformCoordinates(x, y);
-      ctx.beginPath(); 
-      ctx.moveTo(transformed.x, transformed.y);
-      isPenDown = true;
-    }
-    
-    function drawPoint(x, y) { 
-      if (isPenDown) {
-        const transformed = transformCoordinates(x, y);
-        ctx.lineTo(transformed.x, transformed.y); 
-        ctx.stroke();
-      }
-    }
-    
-    function drawEnd() {
-      ctx.closePath();
-      isPenDown = false;
-    }
-    
-    function drawImage(x, y) {
-      if (!imageLoaded) {
-        console.warn('Image not loaded yet');
+    // Function to load the script from the first available location
+    function loadScript() {
+      if (scriptLocations.length === 0) {
+        console.error('Failed to load stpadserverscript.js from any location');
+        document.getElementById('status').textContent = 'Error: Failed to load required scripts';
         return;
       }
       
-      const transformed = transformCoordinates(x, y);
-      
-      // Calculate distance from last image placement
-      const dx = transformed.x - lastImageX;
-      const dy = transformed.y - lastImageY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Only place image if it's far enough from the last one or if it's the first one
-      if (distance >= imageSpacing || (lastImageX === -1000 && lastImageY === -1000)) {
-        // Save the current context state
-        ctx.save();
-        
-        // If rainbow mode is active, apply color filtering
-        if (rainbowMode) {
-          const halfSize = imageSize / 2;
-          ctx.drawImage(imageObj, transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
-          
-          // Apply color tint
-          ctx.globalCompositeOperation = 'source-atop';
-          ctx.fillStyle = rainbowColors[colorIndex];
-          ctx.fillRect(transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
-          
-          colorIndex = (colorIndex + 1) % rainbowColors.length;
-        } else {
-          const halfSize = imageSize / 2;
-          ctx.drawImage(imageObj, transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
-        }
-        
-        ctx.restore();
-        
-        // Remember last position
-        lastImageX = transformed.x;
-        lastImageY = transformed.y;
-      }
+      const location = scriptLocations.shift();
+      const script = document.createElement('script');
+      script.src = location;
+      script.onerror = loadScript; // Try next location if this one fails
+      script.onload = initApp;     // Initialize app once loaded
+      document.body.appendChild(script);
+      console.log('Trying to load script from:', location);
     }
     
-    function updateStatus(message) {
-      statusEl.textContent = message;
-      console.log(message);
-    }
-
-    // Pen event callbacks
-    STPadServerLibCommons.handleNextSignaturePoint = (x, y, pressure) => {
-      if (drawing) {
-        if (drawMode === 'draw') {
-          if (pressure === 0 && isPenDown) {
-            drawEnd();
-          } else if (pressure > 0 && !isPenDown) {
-            drawStart(x, y);
-          } else if (pressure > 0 && isPenDown) {
-            drawPoint(x, y);
-          }
-        } else if (drawMode === 'image') {
-          if (pressure > 0) {
-            drawImage(x, y);
-            isPenDown = true;
-          } else if (pressure === 0 && isPenDown) {
-            isPenDown = false;
-            lastImageX = -1000;
-            lastImageY = -1000;
-          }
-        }
-      }
-    };
-
-    STPadServerLibCommons.handleSignatureStart = () => {
-      if (drawing) {
-        const lastPoint = STPadServerLibCommons.getLastSignaturePoint();
-        if (lastPoint) {
-          if (drawMode === 'draw') {
-            drawStart(lastPoint.x, lastPoint.y);
-          } else if (drawMode === 'image') {
-            lastImageX = -1000;
-            lastImageY = -1000;
-            drawImage(lastPoint.x, lastPoint.y);
-            isPenDown = true;
-          }
-        }
-      }
-    };
-
-    STPadServerLibCommons.handleSignatureStop = () => {
-      if (drawing) {
-        if (drawMode === 'draw' && isPenDown) {
-          drawEnd();
-        } else if (drawMode === 'image') {
-          isPenDown = false;
-        }
-      }
-    };
-
-    // Buttons
-    document.getElementById('btnRetry').onclick = () => {
-      if (connectionActive) {
-        clearCanvas();
-        lastImageX = -1000;
-        lastImageY = -1000;
-        colorIndex = 0;
-        STPadServerLibDefault.retrySignature();
-      }
-    };
-    
-    document.getElementById('btnConfirm').onclick = () => {
-      if (connectionActive) STPadServerLibDefault.confirmSignature();
-    };
-    
-    document.getElementById('btnCancel').onclick = () => {
-      if (connectionActive) STPadServerLibDefault.cancelSignature();
-    };
-
-    document.getElementById('btnCalibrate').onclick = () => {
-      if (!connectionActive) return;
+    // Function to initialize the app after script loads
+    function initApp() {
+      console.log('Script loaded successfully!');
       
-      if (!calibrationMode) {
-        calibrationMode = true;
-        clearCanvas();
-        
-        const pixelRatio = window.devicePixelRatio || 1;
-        const width = canvas.width / pixelRatio;
-        const height = canvas.height / pixelRatio;
-        
-        ctx.fillStyle = 'red';
-        ctx.beginPath();
-        ctx.arc(20, 20, 5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.beginPath();
-        ctx.arc(width - 20, height - 20, 5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        updateStatus('Calibration mode: Tap the red dots on your pad. First top-left, then bottom-right.');
-        
-        let firstPoint = null;
-        let firstPadPoint = null;
-        let secondPadPoint = null;
-        
-        const originalHandler = STPadServerLibCommons.handleNextSignaturePoint;
-        STPadServerLibCommons.handleNextSignaturePoint = (x, y, pressure) => {
-          if (pressure > 0 && !isPenDown) {
-            isPenDown = true;
+      // Keep the original script code inside this function
+      (function(){
+        try {
+          const { STPadServerLibCommons, STPadServerLibApi, STPadServerLibDefault } = window.STPadServerLib;
+          const canvas = document.getElementById('canvas');
+          const ctx = canvas.getContext('2d');
+          const statusEl = document.getElementById('status');
+          const canvasContainer = document.querySelector('.canvas-container');
+          
+          let drawing = false;
+          let connectionActive = false;
+          let isPenDown = false;
+          let currentColor = '#000000';
+          let currentWidth = 2;
+          let scaleX = 1;
+          let scaleY = 1;
+          let padWidth = 0;
+          let padHeight = 0;
+          let drawMode = 'draw'; // 'draw' or 'image'
+          let imageSize = 50;
+          let imageSpacing = 20;
+          let lastImageX = -1000;
+          let lastImageY = -1000;
+          let rainbowMode = false;
+          let rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
+          let colorIndex = 0;
+          let imageObj = new Image();
+          let imageLoaded = false;
+          let offsetX = 0;
+          let offsetY = 0;
+          let calibrationMode = false;
+
+          // Load the image
+          imageObj.onload = function() {
+            imageLoaded = true;
+            console.log('Image loaded successfully');
+          };
+          imageObj.onerror = function() {
+            console.error('Failed to load image');
+            // Create a fallback colorful circle if image fails to load
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 100;
+            tempCanvas.height = 100;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.fillStyle = '#FF0000';
+            tempCtx.beginPath();
+            tempCtx.arc(50, 50, 40, 0, Math.PI * 2);
+            tempCtx.fill();
+            imageObj.src = tempCanvas.toDataURL();
+          };
+          imageObj.src = 'pic.png'; // Set the path to your image
+
+          // Function to resize the canvas to fill its container
+          function resizeCanvas() {
+            const containerWidth = canvasContainer.clientWidth;
+            const containerHeight = canvasContainer.clientHeight;
             
-            if (firstPoint === null) {
-              firstPoint = { x: 20, y: 20 };
-              firstPadPoint = { x, y };
+            // Set canvas display size (css pixels)
+            canvas.style.width = containerWidth + 'px';
+            canvas.style.height = containerHeight + 'px';
+            
+            // Set canvas actual size in memory (scaled to account for extra pixel density)
+            const pixelRatio = window.devicePixelRatio || 1;
+            canvas.width = containerWidth * pixelRatio;
+            canvas.height = containerHeight * pixelRatio;
+            
+            // Normalize coordinate system to use css pixels
+            ctx.scale(pixelRatio, pixelRatio);
+            
+            // Update drawing settings after resize
+            ctx.lineWidth = currentWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = currentColor;
+            
+            // Calculate scaling factors if pad dimensions are known
+            if (padWidth > 0 && padHeight > 0) {
+              scaleX = containerWidth / padWidth;
+              scaleY = containerHeight / padHeight;
+              updateStatus(`Canvas scaled: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
+            }
+
+            // Preserve calibration offsets
+            const oldWidth = canvas.width / pixelRatio;
+            const oldHeight = canvas.height / pixelRatio;
+            const offsetRatioX = offsetX / oldWidth;
+            const offsetRatioY = offsetY / oldHeight;
+            const newWidth = canvas.width / pixelRatio;
+            const newHeight = canvas.height / pixelRatio;
+            offsetX = offsetRatioX * newWidth;
+            offsetY = offsetRatioY * newHeight;
+          }
+
+          // Function to scale and adjust coordinates with offset
+          function transformCoordinates(x, y) {
+            return {
+              x: x * scaleX + offsetX,
+              y: y * scaleY + offsetY
+            };
+          }
+
+          // Initialize drawing mode controls
+          const modeBtns = document.querySelectorAll('.mode-btn');
+          const imageSizeControl = document.querySelector('.image-size-control');
+          const imageSizeSlider = document.querySelector('.image-size-slider');
+          const imageSizeValue = document.querySelector('.image-size-value');
+          const imageSpacingControl = document.querySelector('.image-spacing-control');
+          const imageSpacingSlider = document.querySelector('.image-spacing-slider');
+          const imageSpacingValue = document.querySelector('.image-spacing-value');
+          const rainbowModeControl = document.querySelector('.rainbow-mode-control');
+          const rainbowModeCheckbox = document.getElementById('rainbow-mode-checkbox');
+
+          imageSizeSlider.setAttribute('max', '200');
+
+          modeBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+              modeBtns.forEach(b => b.classList.remove('selected'));
+              this.classList.add('selected');
+              drawMode = this.getAttribute('data-mode');
               
-              ctx.fillStyle = 'green';
-              ctx.beginPath();
-              ctx.arc(20, 20, 7, 0, Math.PI * 2);
-              ctx.fill();
+              // Show/hide image controls based on the selected mode
+              if (drawMode === 'image') {
+                imageSizeControl.classList.add('visible');
+                imageSpacingControl.classList.add('visible');
+                rainbowModeControl.classList.add('visible');
+              } else {
+                imageSizeControl.classList.remove('visible');
+                imageSpacingControl.classList.remove('visible');
+                rainbowModeControl.classList.remove('visible');
+              }
+            });
+          });
+
+          imageSizeSlider.addEventListener('input', function() {
+            imageSize = parseInt(this.value);
+            imageSizeValue.textContent = `${imageSize}px`;
+          });
+
+          imageSpacingSlider.addEventListener('input', function() {
+            imageSpacing = parseInt(this.value);
+            imageSpacingValue.textContent = `${imageSpacing}px`;
+          });
+
+          rainbowModeCheckbox.addEventListener('change', function() {
+            rainbowMode = this.checked;
+          });
+
+          // Initialize drawing controls
+          // Add event listeners for color buttons
+          const colorBtns = document.querySelectorAll('.color-btn');
+          const thicknessBtns = document.querySelectorAll('.thickness-btn');
+
+          colorBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+              // Remove selected class from all color buttons
+              colorBtns.forEach(b => b.classList.remove('selected'));
+              // Add selected class to clicked button
+              this.classList.add('selected');
+              // Update current color
+              currentColor = this.getAttribute('data-color');
+              // Update stroke style
+              ctx.strokeStyle = currentColor;
+            });
+          });
+
+          // Add event listeners for thickness buttons
+          thicknessBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+              // Remove selected class from all thickness buttons
+              thicknessBtns.forEach(b => b.classList.remove('selected'));
+              // Add selected class to clicked button
+              this.classList.add('selected');
+              // Update current width
+              currentWidth = parseInt(this.getAttribute('data-width'));
+              // Update line width
+              ctx.lineWidth = currentWidth;
+            });
+          });
+
+          // Draw helpers
+          function clearCanvas() { 
+            const pixelRatio = window.devicePixelRatio || 1;
+            ctx.clearRect(0, 0, canvas.width / pixelRatio, canvas.height / pixelRatio); 
+          }
+          
+          function drawStart(x, y) { 
+            const transformed = transformCoordinates(x, y);
+            ctx.beginPath(); 
+            ctx.moveTo(transformed.x, transformed.y);
+            isPenDown = true;
+          }
+          
+          function drawPoint(x, y) { 
+            if (isPenDown) {
+              const transformed = transformCoordinates(x, y);
+              ctx.lineTo(transformed.x, transformed.y); 
+              ctx.stroke();
+            }
+          }
+          
+          function drawEnd() {
+            ctx.closePath();
+            isPenDown = false;
+          }
+          
+          function drawImage(x, y) {
+            if (!imageLoaded) {
+              console.warn('Image not loaded yet');
+              return;
+            }
+            
+            const transformed = transformCoordinates(x, y);
+            
+            // Calculate distance from last image placement
+            const dx = transformed.x - lastImageX;
+            const dy = transformed.y - lastImageY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Only place image if it's far enough from the last one or if it's the first one
+            if (distance >= imageSpacing || (lastImageX === -1000 && lastImageY === -1000)) {
+              // Save the current context state
+              ctx.save();
               
-              updateStatus('Now tap the bottom-right red dot');
-            } else {
-              secondPadPoint = { x, y };
+              // If rainbow mode is active, apply color filtering
+              if (rainbowMode) {
+                const halfSize = imageSize / 2;
+                ctx.drawImage(imageObj, transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
+                
+                // Apply color tint
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = rainbowColors[colorIndex];
+                ctx.fillRect(transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
+                
+                colorIndex = (colorIndex + 1) % rainbowColors.length;
+              } else {
+                const halfSize = imageSize / 2;
+                ctx.drawImage(imageObj, transformed.x - halfSize, transformed.y - halfSize, imageSize, imageSize);
+              }
+              
+              ctx.restore();
+              
+              // Remember last position
+              lastImageX = transformed.x;
+              lastImageY = transformed.y;
+            }
+          }
+          
+          function updateStatus(message) {
+            statusEl.textContent = message;
+            console.log(message);
+          }
+
+          // Pen event callbacks
+          STPadServerLibCommons.handleNextSignaturePoint = (x, y, pressure) => {
+            if (drawing) {
+              if (drawMode === 'draw') {
+                if (pressure === 0 && isPenDown) {
+                  drawEnd();
+                } else if (pressure > 0 && !isPenDown) {
+                  drawStart(x, y);
+                } else if (pressure > 0 && isPenDown) {
+                  drawPoint(x, y);
+                }
+              } else if (drawMode === 'image') {
+                if (pressure > 0) {
+                  drawImage(x, y);
+                  isPenDown = true;
+                } else if (pressure === 0 && isPenDown) {
+                  isPenDown = false;
+                  lastImageX = -1000;
+                  lastImageY = -1000;
+                }
+              }
+            }
+          };
+
+          STPadServerLibCommons.handleSignatureStart = () => {
+            if (drawing) {
+              const lastPoint = STPadServerLibCommons.getLastSignaturePoint();
+              if (lastPoint) {
+                if (drawMode === 'draw') {
+                  drawStart(lastPoint.x, lastPoint.y);
+                } else if (drawMode === 'image') {
+                  lastImageX = -1000;
+                  lastImageY = -1000;
+                  drawImage(lastPoint.x, lastPoint.y);
+                  isPenDown = true;
+                }
+              }
+            }
+          };
+
+          STPadServerLibCommons.handleSignatureStop = () => {
+            if (drawing) {
+              if (drawMode === 'draw' && isPenDown) {
+                drawEnd();
+              } else if (drawMode === 'image') {
+                isPenDown = false;
+              }
+            }
+          };
+
+          // Buttons
+          document.getElementById('btnRetry').onclick = () => {
+            if (connectionActive) {
+              clearCanvas();
+              lastImageX = -1000;
+              lastImageY = -1000;
+              colorIndex = 0;
+              STPadServerLibDefault.retrySignature();
+            }
+          };
+          
+          document.getElementById('btnConfirm').onclick = () => {
+            if (connectionActive) STPadServerLibDefault.confirmSignature();
+          };
+          
+          document.getElementById('btnCancel').onclick = () => {
+            if (connectionActive) STPadServerLibDefault.cancelSignature();
+          };
+
+          document.getElementById('btnCalibrate').onclick = () => {
+            if (!connectionActive) return;
+            
+            if (!calibrationMode) {
+              calibrationMode = true;
+              clearCanvas();
               
               const pixelRatio = window.devicePixelRatio || 1;
               const width = canvas.width / pixelRatio;
               const height = canvas.height / pixelRatio;
               
-              const padWidth = secondPadPoint.x - firstPadPoint.x;
-              const padHeight = secondPadPoint.y - firstPadPoint.y;
+              ctx.fillStyle = 'red';
+              ctx.beginPath();
+              ctx.arc(20, 20, 5, 0, Math.PI * 2);
+              ctx.fill();
               
-              if (padWidth > 0 && padHeight > 0) {
-                scaleX = (width - 40) / padWidth;
-                scaleY = (height - 40) / padHeight;
-                offsetX = 20 - firstPadPoint.x * scaleX;
-                offsetY = 20 - firstPadPoint.y * scaleY;
-                
-                updateStatus(`Calibration complete! New scaling: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y, offset: ${offsetX.toFixed(0)},${offsetY.toFixed(0)}`);
-              } else {
-                updateStatus('Calibration failed. Please try again.');
-              }
+              ctx.beginPath();
+              ctx.arc(width - 20, height - 20, 5, 0, Math.PI * 2);
+              ctx.fill();
               
-              calibrationMode = false;
-              STPadServerLibCommons.handleNextSignaturePoint = originalHandler;
+              updateStatus('Calibration mode: Tap the red dots on your pad. First top-left, then bottom-right.');
               
-              setTimeout(() => {
-                clearCanvas();
-                isPenDown = false;
-              }, 1000);
-            }
-          } else if (pressure === 0) {
-            isPenDown = false;
-          }
-        };
-      } else {
-        calibrationMode = false;
-        updateStatus('Calibration cancelled');
-        clearCanvas();
-      }
-    };
-
-    async function onOpen(){
-      updateStatus('Connected to server → searching for pads...');
-      try {
-        const searchParams = new STPadServerLibDefault.Params.searchForPads();
-        const { foundPads } = await STPadServerLibDefault.searchForPads(searchParams);
-        if (!foundPads.length) throw new Error('No pads found');
-        const padIndex = foundPads[0].index;
-        
-        const padInfo = foundPads[0].deviceInfo;
-        if (padInfo && padInfo.Width && padInfo.Height) {
-          padWidth = padInfo.Width;
-          padHeight = padInfo.Height;
-          updateStatus(`Found pad: ${padInfo?.name || 'Unknown device'} (${padWidth}x${padHeight})`);
-        } else {
-          updateStatus(`Found pad: ${padInfo?.name || 'Unknown device'}`);
-        }
-        
-        resizeCanvas();
-
-        await STPadServerLibDefault.openPad(new STPadServerLibDefault.Params.openPad(padIndex));
-        updateStatus('Pad opened successfully');
-        connectionActive = true;
-
-        try {
-          const pixelRatio = window.devicePixelRatio || 1;
-          const canvasWidth = canvas.width / pixelRatio;
-          const canvasHeight = canvas.height / pixelRatio;
-          
-          const signRectParams = new STPadServerLibApi.Sensor.Params.setSignRect(0, 0, canvasWidth, canvasHeight);
-          const result = await STPadServerLibApi.Sensor.setSignRect(signRectParams);
-          
-          if (result.returnCode !== 0) {
-            updateStatus(`Note: Using default pad coordinates (${result.errorMessage})`);
-            
-            if (padWidth === 0 || padHeight === 0) {
-              try {
-                const sensorParams = new STPadServerLibApi.Sensor.Params.getSensorDimensions();
-                const sensorResult = await STPadServerLibApi.Sensor.getSensorDimensions(sensorParams);
-                
-                if (sensorResult.returnCode === 0) {
-                  padWidth = sensorResult.width;
-                  padHeight = sensorResult.height;
-                  scaleX = canvasWidth / padWidth;
-                  scaleY = canvasHeight / padHeight;
-                  updateStatus(`Pad dimensions: ${padWidth}x${padHeight}, scaling: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
+              let firstPoint = null;
+              let firstPadPoint = null;
+              let secondPadPoint = null;
+              
+              const originalHandler = STPadServerLibCommons.handleNextSignaturePoint;
+              STPadServerLibCommons.handleNextSignaturePoint = (x, y, pressure) => {
+                if (pressure > 0 && !isPenDown) {
+                  isPenDown = true;
+                  
+                  if (firstPoint === null) {
+                    firstPoint = { x: 20, y: 20 };
+                    firstPadPoint = { x, y };
+                    
+                    ctx.fillStyle = 'green';
+                    ctx.beginPath();
+                    ctx.arc(20, 20, 7, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    updateStatus('Now tap the bottom-right red dot');
+                  } else {
+                    secondPadPoint = { x, y };
+                    
+                    const pixelRatio = window.devicePixelRatio || 1;
+                    const width = canvas.width / pixelRatio;
+                    const height = canvas.height / pixelRatio;
+                    
+                    const padWidth = secondPadPoint.x - firstPadPoint.x;
+                    const padHeight = secondPadPoint.y - firstPadPoint.y;
+                    
+                    if (padWidth > 0 && padHeight > 0) {
+                      scaleX = (width - 40) / padWidth;
+                      scaleY = (height - 40) / padHeight;
+                      offsetX = 20 - firstPadPoint.x * scaleX;
+                      offsetY = 20 - firstPadPoint.y * scaleY;
+                      
+                      updateStatus(`Calibration complete! New scaling: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y, offset: ${offsetX.toFixed(0)},${offsetY.toFixed(0)}`);
+                    } else {
+                      updateStatus('Calibration failed. Please try again.');
+                    }
+                    
+                    calibrationMode = false;
+                    STPadServerLibCommons.handleNextSignaturePoint = originalHandler;
+                    
+                    setTimeout(() => {
+                      clearCanvas();
+                      isPenDown = false;
+                    }, 1000);
+                  }
+                } else if (pressure === 0) {
+                  isPenDown = false;
                 }
-              } catch (dimErr) {
-                console.warn('Failed to get sensor dimensions:', dimErr);
+              };
+            } else {
+              calibrationMode = false;
+              updateStatus('Calibration cancelled');
+              clearCanvas();
+            }
+          };
+
+          async function onOpen(){
+            updateStatus('Connected to server → searching for pads...');
+            try {
+              const searchParams = new STPadServerLibDefault.Params.searchForPads();
+              const { foundPads } = await STPadServerLibDefault.searchForPads(searchParams);
+              if (!foundPads.length) throw new Error('No pads found');
+              const padIndex = foundPads[0].index;
+              
+              const padInfo = foundPads[0].deviceInfo;
+              if (padInfo && padInfo.Width && padInfo.Height) {
+                padWidth = padInfo.Width;
+                padHeight = padInfo.Height;
+                updateStatus(`Found pad: ${padInfo?.name || 'Unknown device'} (${padWidth}x${padHeight})`);
+              } else {
+                updateStatus(`Found pad: ${padInfo?.name || 'Unknown device'}`);
               }
+              
+              resizeCanvas();
+
+              await STPadServerLibDefault.openPad(new STPadServerLibDefault.Params.openPad(padIndex));
+              updateStatus('Pad opened successfully');
+              connectionActive = true;
+
+              try {
+                const pixelRatio = window.devicePixelRatio || 1;
+                const canvasWidth = canvas.width / pixelRatio;
+                const canvasHeight = canvas.height / pixelRatio;
+                
+                const signRectParams = new STPadServerLibApi.Sensor.Params.setSignRect(0, 0, canvasWidth, canvasHeight);
+                const result = await STPadServerLibApi.Sensor.setSignRect(signRectParams);
+                
+                if (result.returnCode !== 0) {
+                  updateStatus(`Note: Using default pad coordinates (${result.errorMessage})`);
+                  
+                  if (padWidth === 0 || padHeight === 0) {
+                    try {
+                      const sensorParams = new STPadServerLibApi.Sensor.Params.getSensorDimensions();
+                      const sensorResult = await STPadServerLibApi.Sensor.getSensorDimensions(sensorParams);
+                      
+                      if (sensorResult.returnCode === 0) {
+                        padWidth = sensorResult.width;
+                        padHeight = sensorResult.height;
+                        scaleX = canvasWidth / padWidth;
+                        scaleY = canvasHeight / padHeight;
+                        updateStatus(`Pad dimensions: ${padWidth}x${padHeight}, scaling: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
+                      }
+                    } catch (dimErr) {
+                      console.warn('Failed to get sensor dimensions:', dimErr);
+                    }
+                  }
+                }
+              } catch (rectErr) {
+                updateStatus('Note: Using default pad coordinates with internal scaling');
+                console.warn('setSignRect error:', rectErr);
+              }
+
+              clearCanvas();
+              drawing = true;
+              isPenDown = false;
+
+              const startParams = new STPadServerLibDefault.Params.startSignature();
+              startParams.setTextLayout({
+                id: 0,
+                textBlocks: [
+                  { text:'Sign here', width:200, height:20, maxFontSize:20, fontName:'Arial', fontStyle:'', fontSizeId:0, constant:true }
+                ]
+              });
+              await STPadServerLibDefault.startSignature(startParams);
+              updateStatus('Signature session started — draw on your pad now');
+
+              if (padWidth > 0 && padHeight > 0) {
+                const pixelRatio = window.devicePixelRatio || 1;
+                const canvasWidth = canvas.width / pixelRatio;
+                const canvasHeight = canvas.height / pixelRatio;
+                offsetX = (canvasWidth - padWidth * scaleX) / 2;
+                offsetY = (canvasHeight - padHeight * scaleY) / 2;
+              }
+
+            } catch (err) {
+              updateStatus(`Error: ${err.message || 'Unknown error'}`);
+              console.error(err);
+              connectionActive = false;
             }
           }
-        } catch (rectErr) {
-          updateStatus('Note: Using default pad coordinates with internal scaling');
-          console.warn('setSignRect error:', rectErr);
+
+          function onError(e){ 
+            console.error('STPad error', e); 
+            updateStatus(`Connection error: ${e.message || 'Unknown error'}`);
+            connectionActive = false;
+          }
+          
+          function onClose(){ 
+            drawing = false; 
+            connectionActive = false;
+            updateStatus('Connection closed');
+          }
+
+          window.addEventListener('resize', resizeCanvas);
+          resizeCanvas();
+          
+          updateStatus('Connecting to SignoTec server...');
+          const WS_URL = `wss://${location.hostname}:49494`;
+          
+          try {
+            STPadServerLibCommons.createConnection(WS_URL, onOpen, onClose, onError);
+          } catch (e) {
+            updateStatus(`Failed to create connection: ${e.message || 'Unknown error'}`);
+            console.error('Connection creation error:', e);
+          }
+
+        } catch (error) {
+          console.error('Error initializing app:', error);
+          document.getElementById('status').textContent = 
+            'Error: Could not initialize the application. Check console for details.';
         }
-
-        clearCanvas();
-        drawing = true;
-        isPenDown = false;
-
-        const startParams = new STPadServerLibDefault.Params.startSignature();
-        startParams.setTextLayout({
-          id: 0,
-          textBlocks: [
-            { text:'Sign here', width:200, height:20, maxFontSize:20, fontName:'Arial', fontStyle:'', fontSizeId:0, constant:true }
-          ]
-        });
-        await STPadServerLibDefault.startSignature(startParams);
-        updateStatus('Signature session started — draw on your pad now');
-
-        if (padWidth > 0 && padHeight > 0) {
-          const pixelRatio = window.devicePixelRatio || 1;
-          const canvasWidth = canvas.width / pixelRatio;
-          const canvasHeight = canvas.height / pixelRatio;
-          offsetX = (canvasWidth - padWidth * scaleX) / 2;
-          offsetY = (canvasHeight - padHeight * scaleY) / 2;
-        }
-
-      } catch (err) {
-        updateStatus(`Error: ${err.message || 'Unknown error'}`);
-        console.error(err);
-        connectionActive = false;
-      }
-    }
-
-    function onError(e){ 
-      console.error('STPad error', e); 
-      updateStatus(`Connection error: ${e.message || 'Unknown error'}`);
-      connectionActive = false;
+      })();
     }
     
-    function onClose(){ 
-      drawing = false; 
-      connectionActive = false;
-      updateStatus('Connection closed');
-    }
-
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-    
-    updateStatus('Connecting to SignoTec server...');
-    const WS_URL = `wss://${location.hostname}:49494`;
-    
-    try {
-      STPadServerLibCommons.createConnection(WS_URL, onOpen, onClose, onError);
-    } catch (e) {
-      updateStatus(`Failed to create connection: ${e.message || 'Unknown error'}`);
-      console.error('Connection creation error:', e);
-    }
-
-  })();
+    // Start the script loading process
+    loadScript();
   </script>
 </body>
 </html>

@@ -23,19 +23,33 @@ jobs:
     - name: List repository files
       run: ls -R .
 
-    # 3) Create a deployment directory
-    - name: Create deployment directory
-      run: mkdir -p ./deploy
+    # 3) Create a deployment directory - this must match GitHub Pages expectations
+    - name: Create deployment directories
+      run: |
+        mkdir -p ./deploy
+        mkdir -p ./deploy/public
 
-    # 4) Copy files to deployment directory
+    # 4) Copy HTML from docs folder to root of deployment
     - name: Copy HTML from docs folder
       run: cp -r ./docs/* ./deploy/
 
-    # 5) Copy SignoTec script to root of deployment directory
+    # 5) Copy SignoTec script to deployment directory in correct location
     - name: Copy SignoTec script
-      run: cp ./signotec/stpadserverscript.js ./deploy/
+      run: |
+        # Copy to root deployment directory
+        cp ./signotec/stpadserverscript.js ./deploy/
+        # Also provide it in public directory for potential fallback
+        mkdir -p ./deploy/public
+        cp ./signotec/stpadserverscript.js ./deploy/public/
 
-    # 6) Upload the deployment directory as the Pages artifact
+    # 6) Create a debug file to verify deployment
+    - name: Create debug info file
+      run: |
+        echo "Deployment timestamp: $(date)" > ./deploy/debug-info.txt
+        echo "Files in deployment:" >> ./deploy/debug-info.txt
+        find ./deploy -type f | sort >> ./deploy/debug-info.txt
+
+    # 7) Upload the deployment directory as the Pages artifact
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v1
       with:
@@ -48,7 +62,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    # 7) Deploy the artifact to GitHub Pages
+    # 8) Deploy the artifact to GitHub Pages
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v1
