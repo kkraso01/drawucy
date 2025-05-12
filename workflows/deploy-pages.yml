@@ -31,4 +31,4 @@ jobs:
         publish_dir: public
         # Branch to push to; peaceiris/actions-gh-pages defaults to gh-pages,
         # so you can omit this if you like.
-        publish_branch: gh-pages
+        publish_branch: main
