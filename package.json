@@ -1,16 +1,14 @@
 {
   "name": "drawing",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
-  "homepage": "https://kkraso01.github.io/drawucy",
+
+ "description": "Static drawing app",
+ "homepage": "https://kkraso01.github.io/drawucy",
   "scripts": {
-    "start": "node server.js"
-  },
+ },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "express": "^4.21.2"
-  }
+
+ "dependencies": {}
 }

@@ -1,0 +1,33 @@
+name: Deploy static site to GitHub Pages
+
+on:
+  push:
+    branches:
+    - master
+
+permissions:
+  pages: write
+  id-token: write
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest
+    steps:
+    # 1. Checkout your repo
+    - uses: actions/checkout@v3
+
+    # 2. Upload `public/` as the Pages artifact
+    - name: Upload site
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: public
+
+  deploy:
+    needs: build_and_upload
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+    # 3. Deploy to GitHub Pages
+    - uses: actions/deploy-pages@v1
