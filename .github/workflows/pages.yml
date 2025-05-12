@@ -13,28 +13,42 @@ jobs:
   build_and_upload:
     runs-on: ubuntu-latest
     steps:
-    # 1) Checkout your code, full history (so we don’t accidentally miss files)
+    # 1) Checkout your code
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    # 2) Debug: show the repo contents so we can verify public/ is there
+    # 2) Debug: list the repository contents
     - name: List repository files
       run: ls -R .
 
-    # 3) Upload your `public/` folder as the Pages artifact
+    # 3) Create a deployment directory
+    - name: Create deployment directory
+      run: mkdir -p ./deploy
+
+    # 4) Copy files to deployment directory
+    - name: Copy HTML from docs folder
+      run: cp -r ./docs/* ./deploy/
+
+    # 5) Copy SignoTec script to root of deployment directory
+    - name: Copy SignoTec script
+      run: cp ./signotec/stpadserverscript.js ./deploy/
+
+    # 6) Upload the deployment directory as the Pages artifact
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v1
       with:
-        path: public
+        path: ./deploy
 
   deploy:
     needs: build_and_upload
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    # 4) Deploy the artifact to GitHub Pages
-    - uses: actions/deploy-pages@v1
+    # 7) Deploy the artifact to GitHub Pages
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v1
