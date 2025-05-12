@@ -13,11 +13,17 @@ jobs:
   build_and_upload:
     runs-on: ubuntu-latest
     steps:
-    # 1. Checkout your repo
-    - uses: actions/checkout@v3
+    # 1. Checkout your code
+    - uses: actions/checkout@v4
 
-    # 2. Upload `public/` as the Pages artifact
-    - name: Upload site
+    # 2. (Optional) build step here if you need one
+    # - name: Install dependencies
+    #   run: npm ci
+    # - name: Build
+    #   run: npm run build
+
+    # 3. Upload your `public/` folder as the Pages artifact
+    - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v1
       with:
         path: public
@@ -29,5 +35,5 @@ jobs:
       pages: write
       id-token: write
     steps:
-    # 3. Deploy to GitHub Pages
+    # 4. Deploy the artifact to GitHub Pages
     - uses: actions/deploy-pages@v1
