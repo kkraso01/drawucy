@@ -13,16 +13,17 @@ jobs:
   build_and_upload:
     runs-on: ubuntu-latest
     steps:
-    # 1. Checkout your code
-    - uses: actions/checkout@v4
+    # 1) Checkout your code, full history (so we don’t accidentally miss files)
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    # 2. (Optional) build step here if you need one
-    # - name: Install dependencies
-    #   run: npm ci
-    # - name: Build
-    #   run: npm run build
+    # 2) Debug: show the repo contents so we can verify public/ is there
+    - name: List repository files
+      run: ls -R .
 
-    # 3. Upload your `public/` folder as the Pages artifact
+    # 3) Upload your `public/` folder as the Pages artifact
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v1
       with:
@@ -35,5 +36,5 @@ jobs:
       pages: write
       id-token: write
     steps:
-    # 4. Deploy the artifact to GitHub Pages
+    # 4) Deploy the artifact to GitHub Pages
     - uses: actions/deploy-pages@v1
